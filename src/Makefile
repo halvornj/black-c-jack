@@ -1,8 +1,14 @@
 CFLAGS=-g -std=gnu11 -Wall -Wextra
 LDFLAGS=-g
 
+all: dealer player
+
 libhe.a: d1_udp.o
 	ar rc $@ $^
+
+player: player.o libhe.a
+	gcc $(LDFLAGS) -o $@ $^
+
 
 dealer: dealer.o libhe.a
 	gcc $(LDFLAGS) -o $@ $^
