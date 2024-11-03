@@ -7,9 +7,14 @@ struct Dealer
 {
     int num_players;
     D1Peer** players;
-    struct sockaddr_in
+    D1Peer* peer;
 };
 typedef struct Dealer Dealer;
+
+/*TODO docs*/
+Dealer *create_dealer();
+
+int delete_dealer(Dealer *dealer);
 
 /* At this layer, only the following types of packets are known:
  */

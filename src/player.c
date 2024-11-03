@@ -9,6 +9,9 @@
 #include "dealer.h"
 #include "d1_udp.h"
 
+#define SERVER_PORT 2311
+#define SERVER_ADDRESS "localhost" //"25.46.25.156"
+
 /*
  *creates a player connected to the hardwired HAMACHI server, returns NULL on failure.
  *
@@ -29,7 +32,7 @@ Player * create_player()
         free(player);
         return NULL;
     }
-    if(d1_get_peer_info(player->server, "25.46.25.156",2311)==0)
+    if(d1_get_peer_info(player->server, SERVER_ADDRESS,SERVER_PORT)==0)
     {
         d1_delete(player->server);
         free(player);
@@ -46,4 +49,26 @@ int delete_player(Player *player)
         free(player);
     }
     return EXIT_SUCCESS;
+}
+
+int main()
+{
+    Player * player = create_player();
+    if (!player)
+    {
+        printf("Failed to create Lookup client.\n");
+        free(player);
+        return -1;
+    }
+
+    int rc = d1_send_data(player->server, "Hello", 5);
+    if (rc < 0)
+    {
+        perror("d1_send_data");
+        delete_player(player);
+        return -1;
+    }
+    printf("Sent %d bytes\n", rc);
+    delete_player(player);
+    return 0;
 }
