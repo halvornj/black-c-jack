@@ -1,6 +1,7 @@
 CFLAGS=-g -std=gnu11 -Wall -Wextra
 LDFLAGS=-g
 
+all: dealer player
 
 libhe.a: d1_udp.o
 	ar rc $@ $^
@@ -15,7 +16,7 @@ d1_udp_client.o: d1_udp.c d1_udp.h d1_udp_mod.h
 
 d1_udp.o: d1_udp.c d1_udp.h d1_udp_mod.h
 
-%.o: %.c
+%.o: %.c %.h
 	gcc $(CFLAGS) -c $^
 
 clean:

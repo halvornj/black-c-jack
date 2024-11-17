@@ -11,6 +11,8 @@
 
 #include "d1_udp.h"
 
+#include "dealer.h"
+
 #define D1_UDP_PORT 2311
 #define MAX_PACKET_SIZE 1024
 
@@ -23,7 +25,7 @@
 #define SENDTO_ERROR -7
 #define WAIT_ACK_ERROR -8
 
-D1Peer *d1_create_client()
+struct D1Peer* d1_create_client()
 {
     D1Peer *peer = (D1Peer *)malloc(sizeof(D1Peer));
     if (peer == NULL)
@@ -79,22 +81,24 @@ int d1_get_peer_info(struct D1Peer *peer, const char *peername, uint16_t server_
     return 1;
 }
 
-int d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz)
+struct Client* d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz)
 { /*the comment in d1_udp.h says to return negative numbers in case of error, I'm interpreting wrong checksum or size as errors.*/
 
     uint8_t *packet = (uint8_t *)calloc(1, MAX_PACKET_SIZE);
     if (packet == NULL)
     {
         perror("calloc");
-        return CALLOC_ERROR;
+        return NULL;
     }
-    int rc;
-    rc = recv(peer->socket, packet, MAX_PACKET_SIZE, 0);
+    Client *client = (Client *)malloc(sizeof(Client));
+
+    int rc = recvfrom(peer->socket, packet, MAX_PACKET_SIZE, 0, (struct sockaddr*) &client->addr, &client->addrlen); //recieve, and basically put the FROM adress in the client structure
     if (rc < 0)
     {
         perror("recv");
         free(packet);
-        return RECVFROM_ERROR;
+        free(client);
+        return NULL;
     }
     D1Header *header = (D1Header *)packet; /*cast the packet to a D1Header struct, should work because we only cast the first(D1HEADER) bytes?*/
 
@@ -102,8 +106,9 @@ int d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz)
     if ((int)ntohl(header->size) != rc) /*check if the size of the packet is the same as the size in the header, converted from network order to host order*/
     {
         d1_send_ack(peer, !(header->flags & SEQNO)); /*send an ack with the opposite of the seqno flag, triggers retransmit*/
-        free(packet);                                /*free the packet and return*/
-        return SIZE_ERROR;
+        free(packet);
+        free(client);/*free the packet and return*/
+        return NULL;
     }
 
     uint16_t incoming_checksum = ntohs(header->checksum);
@@ -116,7 +121,8 @@ int d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz)
 
         d1_send_ack(peer, !(header->flags & SEQNO)); /*send an ack with the opposite of the seqno flag, triggers retransmit. seqno could also be the peer->seqno.*/
         free(packet);
-        return CHECKSUM_ERROR;
+        free(client);
+        return NULL;
     }
 
     /*the packet should be properly formed, we can now copy the data to the buffer */
@@ -125,8 +131,12 @@ int d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz)
     {
         fprintf(stderr, "Error: the buffer passed to the recv_data was not large enough to hold the data. quitting...");
         free(packet);
-        return (RECV_BUFFER_TOO_SMALL);
+        free(client);
+        return (NULL);
     }
+
+    peer->addr = client->addr; //set the peer's address to the client's address, so we can send acks to the correct address
+
     memcpy(buffer, packet + sizeof(D1Header), rc - sizeof(D1Header)); /*copy the data from the packet to the buffer. we offset the header data in the src*/
 
     int ackno = ntohs(header->flags) & SEQNO;
@@ -135,9 +145,13 @@ int d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz)
         ackno = 1;
     }
 
+    client->seqno = ackno;
+
+
     d1_send_ack(peer, ackno); /*send an ack with the seqno flag*/
+    client->seqno = ackno;
     free(packet);
-    return rc - sizeof(D1Header); /*return the size of the data*/
+    return client; /*return the sender of the data*/
 }
 
 int d1_wait_ack(D1Peer *peer, char *buffer, size_t sz) /*i don't get it, is the buffer and sz the data buffer? I'm assuming it is, to use recursion*/
@@ -162,8 +176,7 @@ int d1_wait_ack(D1Peer *peer, char *buffer, size_t sz) /*i don't get it, is the 
         if (errno == EAGAIN || errno == EWOULDBLOCK)
         { /*timeout occurred: with the setsockopt() the recv will return -1 and set errno to EAGAIN or EWOULDBLOCK (idk what these are, but thats the documentation so...*/
             fprintf(stderr, "Timeout occurred while waiting for ACK, resending data...\n");
-            d1_send_data(peer, buffer, sz);
-            return d1_wait_ack(peer, buffer, sz);
+            return d1_send_data(peer, buffer, sz);
         }
         else
         {
@@ -258,6 +271,44 @@ int d1_send_data(D1Peer *peer, char *buffer, size_t sz)
     free(packet);
     return wc;
 }
+
+
+int d1_send_connect(D1Peer *peer)
+{
+    //construct a connect-header
+    D1Header *header = (D1Header *)malloc(sizeof(D1Header));
+    if (header == NULL)
+    {
+        perror("malloc");
+        return -1;
+    }
+    header->flags = FLAG_CONNECT;
+    header->flags = htons(header->flags);
+    header->size = htonl(sizeof(D1Header));
+    header->checksum = htons(compute_checksum((uint8_t *)header, sizeof(D1Header)));
+
+    //actually send the packet
+    int wc = sendto(
+        peer->socket,
+        header,
+        sizeof(D1Header),
+        0,
+        (struct sockaddr *)&peer->addr,
+        sizeof(peer->addr));
+    if (wc < 0)
+    {
+        perror("sendto");
+        free(header);
+        return -1;
+    }
+    // d1_wait_ack(peer, NULL, 0); //wait for the ack
+    free(header);
+
+    return 0;
+}
+
+
+
 
 void d1_send_ack(struct D1Peer *peer, int seqno)
 {

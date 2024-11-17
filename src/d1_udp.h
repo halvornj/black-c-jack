@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 
 #include "d1_udp_mod.h"
+#include "dealer.h"
+#include "player.h"
 
 /* This is the packet header for the communication method that is implemented by the D1
  * entity.
@@ -67,6 +69,7 @@ typedef struct D1Header D1Header;
  * byte order.
  */
 #define FLAG_DATA       (1 << 15)
+#define FLAG_CONNECT    (1 << 14)
 #define FLAG_ACK        (1 << 8)
 #define SEQNO           (1 << 7)
 #define ACKNO           (1 << 0)
@@ -77,7 +80,7 @@ typedef struct D1Header D1Header;
  *  Returns the pointer to a structure on the heap in case of success or NULL
  *  in case of failure.
  */
-D1Peer* d1_create_client( );
+struct D1Peer* d1_create_client();
 
 /** Take a pointer to a D1Peer struct. If it is non-NULL, close the socket
  *  and free the memory of the server struct.
@@ -127,7 +130,7 @@ int  d1_wait_ack( D1Peer* peer, char* buffer, size_t sz );
  *  in case of error. Empty data packets are allowed, and a return value of 0 is therefore
  *  valid.
  */
-int  d1_recv_data( struct D1Peer* peer, char* buffer, size_t sz );
+struct Client* d1_recv_data(struct D1Peer *peer, char *buffer, size_t sz);
 
 /** Send an ACK for the given sequence number.
  */

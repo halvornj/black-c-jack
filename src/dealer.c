@@ -30,20 +30,25 @@ Dealer *create_dealer()
         free(dealer);
         return NULL;
     }
-
-    //reusing old code:
-    if (!d1_get_peer_info(dealer->peer, "localhost", SERVER_PORT)) //temporarily set the server to localhost
-    {
-        perror("d1_get_peer_info");
-        free(dealer);
-        return NULL;
-    }
-    dealer->peer->addr.sin_addr.s_addr = htonl(INADDR_ANY); //set the address to be any address
+    reset_dealer_port(dealer);
 
     //binding the socket to the address
     bind(dealer->peer->socket, (struct sockaddr *)&dealer->peer->addr, sizeof(dealer->peer->addr));
 
     return dealer;
+}
+
+int reset_dealer_port(Dealer *dealer)
+{
+    //reusing old code:
+    if (!d1_get_peer_info(dealer->peer, "localhost", SERVER_PORT)) //temporarily set the server to localhost
+    {
+        perror("d1_get_peer_info");
+        free(dealer);
+        return -1;
+    }
+    dealer->peer->addr.sin_addr.s_addr = htonl(INADDR_ANY); //set the address to be any address
+    return 0;
 }
 
 
@@ -57,11 +62,7 @@ int delete_dealer(Dealer *dealer)
     // Close the dealer's main port/file descriptor
     d1_delete(dealer->peer);
 
-    // Free the dealer's player list
-    for (int i = 0; i < dealer->num_players; i++)
-    {
-        d1_delete(dealer->players[i]);
-    }
+
     free(dealer->players);
 
     // Free the dealer
@@ -70,31 +71,60 @@ int delete_dealer(Dealer *dealer)
     return 0;
 }
 
-int add_player(Dealer *dealer, D1Peer *player)
+int gameloop(Dealer *dealer)
 {
-    if (dealer == NULL || player == NULL)
+    char buffer[512];
+    int bufflen = 512;
+    Client* client = d1_recv_data(dealer->peer, buffer, bufflen);
+    if (client == NULL)
     {
+        fprintf(stderr, "error in d1_recv_data: client was NULL\n");
         return -1;
     }
 
-    dealer->num_players++;
-    dealer->players = (D1Peer **)realloc(dealer->players, dealer->num_players * sizeof(Player *));
-    dealer->players[dealer->num_players - 1] = player;
-    return 0;
+    int found = 0;
+    for(int i = 0; i<dealer->num_players; i++)
+    {
+        if(dealer->players[i] == client)
+        {
+            found = i;
+            break;
+        }
+    }         //lazy way to check if the client is already in the list
+
+    if(client->addr.sin_addr.s_addr == dealer->next_player->addr.sin_addr.s_addr) //if the client that sent us a message is the expected next player:
+    {
+        //do stuff
+
+        //finally, advance to the next player
+        dealer->next_player = dealer->players[found+1%dealer->num_players]; //set the next player to be the next player in the list
+    }
+    else
+    {
+        if(!found) //if they weren't already connected, add them to the list.
+        {
+            dealer->players = realloc(dealer->players, sizeof(Client) * (dealer->num_players + 1));
+            dealer->players[dealer->num_players] = client;
+            dealer->num_players++;
+            //TODO: send a message to the client that they have been added to the game
+        }else
+        {
+            //TODO: send a message to the client that they are already in the game, and that they should wait for their turn
+        }
+
+    }
+
+    //finally, open the socket to allow anyone to message
+    reset_dealer_port(dealer);
+    return gameloop(dealer);
 }
 
 
 
-int remove_player(Dealer *dealer, D1Peer *player)
-{
-   //TODO: Implement this function
-    return 0;
-}
+
 
 int main()
 {
-    char buffer[1024];
-    int bufflen = 1024;
     Dealer *dealer = create_dealer();
     if (!dealer)
     {
@@ -102,15 +132,6 @@ int main()
         free(dealer);
         return -1;
     }
-    int rc = d1_recv_data(dealer->peer, buffer, bufflen);
-    if (rc < 0)
-    {
-        perror("d1_recv_data");
-        free(dealer);
-        return -1;
-    }
-    printf("Received %d bytes\n", rc);
-
 
     delete_dealer(dealer);
     return 0;

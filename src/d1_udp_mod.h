@@ -32,6 +32,8 @@ typedef struct D1Peer D1Peer;
 *this is the header for the helper function that computes the checksum of a packet
  */
 uint16_t compute_checksum(uint8_t *packet, size_t sz);
+int d1_send_connect(D1Peer *peer);
+int d1_wait_connect_ack(D1Peer *peer, char *buffer, size_t sz);
 
 
 
