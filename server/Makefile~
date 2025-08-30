@@ -1,0 +1,14 @@
+CFLAGS=-g -std=gnu11 -Wall -Wextra
+LDFLAGS=-g
+
+
+server: server.o
+	gcc $(LDFLAGS) -o $@ $^
+
+
+%.o: %.c
+	gcc $(CFLAGS) -c $^
+
+clean:
+	rm -f *.o
+	rm -f server
