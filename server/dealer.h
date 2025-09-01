@@ -36,7 +36,7 @@ struct dealer{
 /*prototypes*/
 void* listen_for_new_player(void* args); //args is actually a pointer to a dealer
 void reshuffle_deck(struct dealer* dealer);
-
+card_t deal_card(struct dealer* dealer);
 
 
 #endif

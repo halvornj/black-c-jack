@@ -17,7 +17,7 @@ int main(){
   
   struct sockaddr_in serv_addr;
   struct dealer dealer;
-  mtx_init(&(dealer.playerll_lock));
+  mtx_init(&(dealer.playerll_lock), mtx_plain);
   cnd_init(&(dealer.players_present));
   dealer.table_is_empty = true;
   
@@ -59,10 +59,28 @@ int main(){
     //guaranteed we now have at least one player, and that we are holding playerll_lock? according to how i remember condition vars
     dealer.current_player = dealer.current_player->next;
     if(dealer.current_player == dealer.head_player){//we've gone back around to the start of the table, this means we collect the cards and deal.
-
       // cards remaining = SHOE_SIZE - dealer.cards_dealt. If cards remaining < RESHUFFLE_DECK_LIMIT, we reinitialize(reshuffle) the deck.
-      
+     
+      if(SHOE_SIZE - dealer.cards_dealt < RESHUFFLE_DECK_LIMIT){
+	reshuffle_deck(&dealer);
+	dealer.cards_dealt = 0;
+      }
+      struct player* dealing_to = dealer.head_player;
+      bzero((void*) &(dealing_to->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND));
+      dealing_to->hand[0] = deal_card(&dealer);
+      dealing_to->hand[1] = deal_card(&dealer);
+      dealing_to = dealing_to->next;
+      //we've dealt to the first player, now we go around and deal to everyone else.
+      while(dealing_to != dealer.head_player){
+	bzero((void*) &(dealing_to->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND));
+	dealing_to->hand[0] = deal_card(&dealer);
+	dealing_to->hand[1] = deal_card(&dealer);
+	dealing_to = dealing_to->next;
+      }
+      //all players should now have 2 cards.
     }
+
+
     
   }
   
@@ -70,6 +88,10 @@ int main(){
   
   return EXIT_SUCCESS;
 }
+card_t deal_card(struct dealer* dealer){
+  return dealer->deck[dealer->cards_dealt++];
+}
+
 
 void reshuffle_deck(struct dealer* dealer){
   //randomizing...:
