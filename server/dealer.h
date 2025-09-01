@@ -4,8 +4,11 @@
 #include <stdbool.h>
 #include <threads.h>
 #define MAX_CARDS_PER_HAND 21 // if there is an infinite shoe, you could get 21 aces. 
+#define NUM_DECKS 4
+#define SHOE_SIZE (NUM_DECKS*4)
 
 typedef char card_t[2]; //each card is represened as 2 characters, e.g. 2D for 2 of diamods, kH for king of hearts
+
 
 struct player {
   int socket_fd;
@@ -24,14 +27,15 @@ struct dealer{
   //locks for manipluating players:
   cnd_t players_present;
   mtx_t playerll_lock;
+  bool table_is_empty;
 
-  int num_players_present;
-
+  card_t deck[SHOE_SIZE];
+  uint8_t cards_dealt;
 };
 
 /*prototypes*/
-void* listen_for_new_player(void* args); // will need a pointer to the player-ll, and a mutex.
-
+void* listen_for_new_player(void* args); //args is actually a pointer to a dealer
+void reshuffle_deck(struct dealer* dealer);
 
 
 

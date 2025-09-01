@@ -11,13 +11,15 @@
  
 #define SERVER_PORT 2311
 #define MAX_PLAYER_COUNT 10
+#define RESHUFFLE_DECK_LIMIT 30
 
 int main(){
   
   struct sockaddr_in serv_addr;
   struct dealer dealer;
-  
-
+  mtx_init(&(dealer.playerll_lock));
+  cnd_init(&(dealer.players_present));
+  dealer.table_is_empty = true;
   
   dealer.serv_socket_fd = socket(AF_INET, SOCK_STREAM, 0); //ipv4, TCP/STREAM, default protocol
   if(dealer.serv_socket_fd == -1){
@@ -36,7 +38,7 @@ int main(){
     exit(EXIT_FAILURE);
   }
 
-  //TODO start a thread running listen_for_new_player()
+
   pthread_t listening_thread;
   if((pthread_create(&listening_thread, NULL, listen_for_new_player, (void*)&dealer)) != 0){
     fprintf(stderr, "error creating listening thread.\n");
@@ -44,20 +46,57 @@ int main(){
   }
   printf("spawned listening thread...\n");
   
-  
 
-  
-  /*
+  /****
+   ****MAIN GAMEPLAY LOOP****
+  *****/
   while(true){//main gameplay loop
     //note: we need a separate thread running a separate infinite loop, listening for new players. This means that here we go through a MUTEXED linked list of players who do their turns, and the listening-thread adds new entries to that mutexed list.
-  
+    mtx_lock(&(dealer.playerll_lock));
+    while(dealer.table_is_empty){
+      cnd_wait(&(dealer.table_is_empty), &(dealer.playerll_lock));
+    }
+    //guaranteed we now have at least one player, and that we are holding playerll_lock? according to how i remember condition vars
+    dealer.current_player = dealer.current_player->next;
+    if(dealer.current_player == dealer.head_player){//we've gone back around to the start of the table, this means we collect the cards and deal.
+
+      // cards remaining = SHOE_SIZE - dealer.cards_dealt. If cards remaining < RESHUFFLE_DECK_LIMIT, we reinitialize(reshuffle) the deck.
+      
+    }
+    
   }
-  */
   
 
   
   return EXIT_SUCCESS;
 }
+
+void reshuffle_deck(struct dealer* dealer){
+  //randomizing...:
+  //initialize with [2D,2D,2D,2D,2H,2H,2H,2H,2C,2C....] (for 4 decks), then loop over, and for each, choose random index and swap?
+  //start with sorted deck:
+
+  //TODO extract 13 and 4 to defines/consts
+  int current_card_idx = 0;
+  char nums[13] = {"2","3","4","5","6","7","8","9","t","j","q","k","a"};
+  char suits[4]={"D", "H", "C", "S"};
+  for(int i=0; i<NUM_DECKS; i++){
+    for(int suit_idx = 0; suit_idx < 4; suit_idx++){
+      for(int num_idx = 0; num_idx<13; num_idx++){
+	dealer->deck[current_card_idx++] = {nums[num_idx], suits[suit_idx]};
+      }
+    }
+  }
+  //deck should now contain all cards, now we loop over and swap every card for another random card. This should be random?
+  for(int idx = 0; idx<SHOE_SIZE; idx++){
+    int swap_idx = (random() % SHOE_SIZE);
+    card_t temp = dealer->deck[swap_idx];
+    dealer->deck[swap_idx] = dealer->deck[idx];
+    dealer->deck[idx] = temp;
+  }
+  printf("deck randomized.\n");
+}
+
 
 //this is the function passed to the thread, that listens and accepts new players.
 void* listen_for_new_player(void* args){
@@ -76,7 +115,7 @@ void* listen_for_new_player(void* args){
     }
 
     struct sockaddr_in client_sockaddr;
-    int cli_addr_len = sizeof(client_sockaddr); //note; this could also be saved in the player, to check and restore balance on reconnect between sessions?
+    int cli_addr_len = sizeof(client_sockaddr); //note; this could also be saved, to check and restore balance on reconnect between sessions?
     //accept new connection,
     new_player.socket_fd = accept(dealer->serv_socket_fd, (struct sockaddr*) &client_sockaddr, (socklen_t*)&cli_addr_len);
     if(new_player.socket_fd <0){
@@ -84,26 +123,23 @@ void* listen_for_new_player(void* args){
       exit(EXIT_FAILURE);
     }
     printf("(listening thread)  accepting connection...\n");
-
+    
     //inserting new player
+    mtx_lock(&(dealer->playerll_lock));
     if(dealer->head_player == NULL){//no players present, this connection is the first
       new_player.next = &new_player;
       new_player.prev = &new_player; //ring-buffer
-
-      mtx_lock(&(dealer->playerll_lock));//we need a mutex to manipulate the ll
       dealer->current_player = &new_player;
       dealer->head_player = &new_player;
-      mtx_unlock(&(dealer->playerll_lock));
+      
     }else{ //insert at the end
       new_player.next = dealer->head_player;
       new_player.prev = dealer->head_player->prev;
-
-      mtx_lock(&(dealer->playerll_lock));
       dealer->head_player->prev->next = &new_player;
       dealer->head_player->prev = &new_player;
-      mtx_unlock(&(dealer->playerll_lock));
       //note; we dont set a .new-bool here, but when we revolve players in the gameplay loop we must check if they have cards. if the "current player" does not have any cards, it means they joined mid-round, and should be skipped.
     }
     cnd_signal(&(dealer->players_present)); //signal that there are players present, and gameloop may run.
+    mtx_unlock(&(dealer->playerll_lock));
   }
 }
