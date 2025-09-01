@@ -5,7 +5,8 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <stdbool.h>
-// #include "dealer.h"
+#include <pthread.h>
+#include "dealer.h"
 
  
 #define SERVER_PORT 2311
@@ -34,12 +35,6 @@ int main(){
     exit(EXIT_FAILURE);
   }
 
-  if((listen(sock_fd, MAX_PLAYER_COUNT)
-      ) != 0){
-    fprintf(stderr, "failure setting socket to listen.\n");
-    exit(EXIT_FAILURE);
-  }
-
 
   while(true){//main gameplay loop
     //note: we need a separate thread running a separate infinite loop, listening for new players. This means that here we go through a MUTEXED linked list of players who do their turns, and the listening-thread adds new entries to that mutexed list.
@@ -52,4 +47,31 @@ int main(){
   return EXIT_SUCCESS;
 }
 
+//this is the function passed to the thread, that listens and accepts new players.
+int listen_for_new_player(struct* dealer){
+  while (true){ //this thread should run forever, listening and adding.
+    //init empty player to be added
+    struct player new_player;
+    new_player.socket_fd = -1;
+    new_player.balance = 500;
+    //todo maybe init rest
 
+    //set dealer to listen,
+    if((listen(dealer->serv_socket_fd, MAX_PLAYER_COUNT)) != 0){
+      fprintf(stderr, "failure setting socket to listen.\n");
+      exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in client_sockaddr;
+    //accept new connection,
+    new_player.socket_fd = accept(dealer->serv_socket_fd, (sockaddr*) &client_sockaddr, sizeof(client_sockaddr));
+    if(new_player.socket_fd <0){
+      fprintf(stderr, "error accepting connection.\n");
+      exit(EXIT_FAILURE);
+    }
+    printf("accepting connection...\n");
+
+    
+    
+  }
+}
