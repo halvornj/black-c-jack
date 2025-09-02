@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <arpa/inet.h>
+#include <string.h>
 #include "player.h"
 #include "../server/dealer.h"
 
@@ -21,10 +22,12 @@ int main(){
   addr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
   addr.sin_port = htons(SERVER_PORT);
 
-  if((bind(socket_fd, (struct sockaddr *) &addr, sizeof(addr))) != 0){
+  if((connect(socket_fd, (struct sockaddr *) &addr, sizeof(addr))) != 0){
     fprintf(stderr, "failure binding client socket.\n");
+    fprintf(stderr, "errno: %s\n", strerror(errno));
     exit(EXIT_FAILURE);
   }
+  printf("successfully connected to dealer.\n");
   
 
 
