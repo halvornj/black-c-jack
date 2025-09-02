@@ -6,10 +6,10 @@
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <unistd.h>
 #include "dealer.h"
 
  
-#define SERVER_PORT 2311
 #define MAX_PLAYER_COUNT 10
 #define RESHUFFLE_DECK_LIMIT 30
 
@@ -50,8 +50,18 @@ int main(){
   /****
    ****MAIN GAMEPLAY LOOP****
   *****/
+  
+  //TEMP::
+  int temp = 0;
   while(true){//main gameplay loop
     //note: we need a separate thread running a separate infinite loop, listening for new players. This means that here we go through a MUTEXED linked list of players who do their turns, and the listening-thread adds new entries to that mutexed list.
+    printf("%d\n", temp++);
+    sleep(1);
+    
+    /*
+*********
+this is commented out, so i can test the multithreading/recieving of clients. I'm just gonna run main as an infinite loop printing numbers and sleeping, and we'll see if the listening-thread prints some good stuff. 
+
     mtx_lock(&(dealer.playerll_lock));
     while(dealer.table_is_empty){
       cnd_wait(&(dealer.players_present), &(dealer.playerll_lock));
@@ -59,9 +69,11 @@ int main(){
     //guaranteed we now have at least one player, and that we are holding playerll_lock? according to how i remember condition vars
     dealer.current_player = dealer.current_player->next;
     if(dealer.current_player == dealer.head_player){//we've gone back around to the start of the table, this means we collect the cards and deal.
-      //TODO before we shuffle, we need to play the dealers hand, and pay out.
 
-      
+      //TODO before we shuffle, we need to play the dealers hand, and pay out.
+     
+      //MAKING A BIG COMMENT, BECAUSE THAT ^ IS REALLY IMPORTANT! MUST GO BEFORE DEALING, OBV.
+       
      
       if(SHOE_SIZE - dealer.cards_dealt < RESHUFFLE_DECK_LIMIT){
 	reshuffle_deck(&dealer);
@@ -87,8 +99,13 @@ int main(){
     
     
 
-    
     dealer.current_player = dealer.current_player->next; //advance player. Note, this is at the end of the while().
+
+    **********
+    */
+
+   
+      
   }
   
 

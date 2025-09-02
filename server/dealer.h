@@ -6,6 +6,8 @@
 #define MAX_CARDS_PER_HAND 21 // if there is an infinite shoe, you could get 21 aces. 
 #define NUM_DECKS 4
 #define SHOE_SIZE 208 //note that this is dependent on NUM_DECKS, but i dont want to insert a bunch of unnecessary multiplications.
+#define SERVER_ADDRESS "127.0.0.1"
+#define SERVER_PORT 2311
 
 typedef char card_t[2]; //each card is represened as 2 characters, e.g. 2D for 2 of diamods, kH for king of hearts
 
