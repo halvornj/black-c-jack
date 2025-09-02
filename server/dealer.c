@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <ctype.h>
 #include "dealer.h"
 
  
@@ -51,16 +52,9 @@ int main(){
    ****MAIN GAMEPLAY LOOP****
   *****/
   
-  //TEMP::
-  int temp = 0;
   while(true){//main gameplay loop
     //note: we need a separate thread running a separate infinite loop, listening for new players. This means that here we go through a MUTEXED linked list of players who do their turns, and the listening-thread adds new entries to that mutexed list.
-    printf("%d\n", temp++);
-    sleep(1);
     
-    /*
-*********
-this is commented out, so i can test the multithreading/recieving of clients. I'm just gonna run main as an infinite loop printing numbers and sleeping, and we'll see if the listening-thread prints some good stuff. 
 
     mtx_lock(&(dealer.playerll_lock));
     while(dealer.table_is_empty){
@@ -71,9 +65,11 @@ this is commented out, so i can test the multithreading/recieving of clients. I'
     if(dealer.current_player == dealer.head_player){//we've gone back around to the start of the table, this means we collect the cards and deal.
 
       //TODO before we shuffle, we need to play the dealers hand, and pay out.
-     
       //MAKING A BIG COMMENT, BECAUSE THAT ^ IS REALLY IMPORTANT! MUST GO BEFORE DEALING, OBV.
-       
+      
+
+
+      
      
       if(SHOE_SIZE - dealer.cards_dealt < RESHUFFLE_DECK_LIMIT){
 	reshuffle_deck(&dealer);
@@ -96,15 +92,20 @@ this is commented out, so i can test the multithreading/recieving of clients. I'
     //where the hell do i unlock the ll???? here I guess
     mtx_unlock(&(dealer.playerll_lock));
 
+    /* (Imagine there is oceans 11 heist music playing) here's the plan:
+       1.We spawn one cancelable thread, P, which does the play-communication / back-and-forth with the current player. recieving their moves, sending them cards. This thread will naturally exit either when the player stands, or goes bust.
+       2. We start some sort of timer, maybe on another thread T, which upon completion, cancels P. This is the timeout, if you spend more than 30 seconds? on a hand.
+       3. on main-thread, we wait/join on P. This means that once we've joined, we know that their turn is over - either from a time out, a stand or a bust. We can then move on to the next player.
+     */
+
+    //step 1.
+    
+    
+
     
     
 
     dealer.current_player = dealer.current_player->next; //advance player. Note, this is at the end of the while().
-
-    **********
-    */
-
-   
       
   }
   
@@ -112,6 +113,48 @@ this is commented out, so i can test the multithreading/recieving of clients. I'
   
   return EXIT_SUCCESS;
 }
+
+/*
+ * This is the function that interacts with the current player. It should be passed to a cancellable thread, which gets cancelled on a timeout. This function/thread returns when either the player stands, or goes bust.
+ * @args: a void-cast of a pointer to the dealer. formatted as `void* args` begause pthread wants that and I'm lazy.
+ @returns: nothing, but upon thread-completion (from exit or cancel), a hand is done. The next player can be handled.
+ */
+void* play_hand(void* args){
+  struct dealer* dealer = (struct dealer*) args;
+  struct player* cur_pl = &(dealer->current_player);
+  //notes; keep man pages for pthread_cancel() and pthread_setcancelstate() open.
+  //I'm thinking we disable cancels while we draw and send cards, then enable before we listen for a response.
+  // not actually sure we need to disable cancels as it is only at end of turn anyway, so it doesnt matter if we draw a card and get cancelled before sending. The timer would be over, so it doesn't matter?
+  pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL); //should be default, but just in case.
+
+  //okay, now for the actual blackjack stuff :(
+  //the ace is going to make this a real pain >:(
+  cur_pl->current_score = card_score(cur_pl->hand[0]) + card_score(cur_pl->hand[1]);
+
+  while(cur_pl->current_score <22){ //keep in mind, we get cancelled by a timer if we take too long
+    //and we return/break if we stand.
+
+    uint8_t buf[MSG_BUFSZ];
+    
+    
+  }
+  
+}
+
+
+/*returns the value for a card. Counts aces as 11, it is up to bust-handler to retreat as a 1 and subtract 10 from total score*/
+uint8_t card_score(card_t* card){
+  if(isdigit((*card)[0])){//not a face card.
+    return ((*card)[0] - '0');
+  }
+  if((*card)[0]=='a'){
+    return 11;
+  }
+  return 10; //face card, but not ace.
+}
+
+
+
 
 /*
 this function should be called with an already randomized deck. If the deck is not random, this deals them in order.

@@ -7,7 +7,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include "player.h"
-#include "../server/dealer.h"
+
 
 int main(){
   int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
