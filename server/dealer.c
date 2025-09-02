@@ -54,19 +54,21 @@ int main(){
     //note: we need a separate thread running a separate infinite loop, listening for new players. This means that here we go through a MUTEXED linked list of players who do their turns, and the listening-thread adds new entries to that mutexed list.
     mtx_lock(&(dealer.playerll_lock));
     while(dealer.table_is_empty){
-      cnd_wait(&(dealer.table_is_empty), &(dealer.playerll_lock));
+      cnd_wait(&(dealer.players_present), &(dealer.playerll_lock));
     }
     //guaranteed we now have at least one player, and that we are holding playerll_lock? according to how i remember condition vars
     dealer.current_player = dealer.current_player->next;
     if(dealer.current_player == dealer.head_player){//we've gone back around to the start of the table, this means we collect the cards and deal.
-      // cards remaining = SHOE_SIZE - dealer.cards_dealt. If cards remaining < RESHUFFLE_DECK_LIMIT, we reinitialize(reshuffle) the deck.
+      //TODO before we shuffle, we need to play the dealers hand, and pay out.
+
+      
      
       if(SHOE_SIZE - dealer.cards_dealt < RESHUFFLE_DECK_LIMIT){
 	reshuffle_deck(&dealer);
 	dealer.cards_dealt = 0;
       }
       struct player* dealing_to = dealer.head_player;
-      bzero((void*) &(dealing_to->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND));
+      bzero((void*) &(dealing_to->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND)); //empty the hand
       dealing_to->hand[0] = deal_card(&dealer);
       dealing_to->hand[1] = deal_card(&dealer);
       dealing_to = dealing_to->next;
@@ -77,18 +79,27 @@ int main(){
 	dealing_to->hand[1] = deal_card(&dealer);
 	dealing_to = dealing_to->next;
       }
-      //all players should now have 2 cards.
     }
-
+    //all players should now have 2 cards.
+    //where the hell do i unlock the ll???? here I guess
+    mtx_unlock(&(dealer.playerll_lock));
 
     
+    
+
+    
+    dealer.current_player = dealer.current_player->next; //advance player. Note, this is at the end of the while().
   }
   
 
   
   return EXIT_SUCCESS;
 }
-card_t deal_card(struct dealer* dealer){
+
+/*
+this function should be called with an already randomized deck. If the deck is not random, this deals them in order.
+ */
+card_t* deal_card(struct dealer* dealer){
   return dealer->deck[dealer->cards_dealt++];
 }
 
@@ -100,19 +111,20 @@ void reshuffle_deck(struct dealer* dealer){
 
   //TODO extract 13 and 4 to defines/consts
   int current_card_idx = 0;
-  char nums[13] = {"2","3","4","5","6","7","8","9","t","j","q","k","a"};
-  char suits[4]={"D", "H", "C", "S"};
+  char nums[13] = {'2','3','4','5','6','7','8','9','t','j','q','k','a'};
+  char suits[4]={'D', 'H', 'C', 'S'};
   for(int i=0; i<NUM_DECKS; i++){
     for(int suit_idx = 0; suit_idx < 4; suit_idx++){
-      for(int num_idx = 0; num_idx<13; num_idx++){
-	dealer->deck[current_card_idx++] = {nums[num_idx], suits[suit_idx]};
+      for(int num_idx = 0; num_idx < 13; num_idx++){
+	card_t card = {nums[num_idx], suits[suit_idx]};
+	dealer->deck[current_card_idx++] = &card;
       }
     }
   }
   //deck should now contain all cards, now we loop over and swap every card for another random card. This should be random?
   for(int idx = 0; idx<SHOE_SIZE; idx++){
     int swap_idx = (random() % SHOE_SIZE);
-    card_t temp = dealer->deck[swap_idx];
+    card_t* temp = dealer->deck[swap_idx];
     dealer->deck[swap_idx] = dealer->deck[idx];
     dealer->deck[idx] = temp;
   }

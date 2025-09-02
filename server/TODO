@@ -1,0 +1,4 @@
+plan/things to do:
+- each iteration of the main:while(true) main gameplay loop should be one players turn.
+- (after potentially dealing) We need to start an interrupt timer. then, we run another infinite? loop recieving messages about what moves the current player makes.
+We need to exit this inner move-loop when either 1. the player busts, 2. the player stands, or 3. the timer expires.
