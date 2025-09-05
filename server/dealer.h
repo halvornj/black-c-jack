@@ -8,9 +8,11 @@
 #define MAX_CARDS_PER_HAND 21 // if there is an infinite shoe, you could get 21 aces. 
 #define NUM_DECKS 4
 #define SHOE_SIZE 208 //note that this is dependent on NUM_DECKS, but i dont want to insert a bunch of unnecessary multiplications.
+#define STARTING_BALANCE 500
 
 struct player {
   int socket_fd;
+  char name[MAX_NAME_LENGTH];
   uint16_t balance;
   card_t* hand[MAX_CARDS_PER_HAND];
   uint8_t current_score;
@@ -39,7 +41,8 @@ struct dealer{
 //TODO docs
 void* listen_for_new_player(void* args); //args is actually a pointer to a dealer
 void reshuffle_deck(struct dealer* dealer);
-card_t* deal_card(struct dealer* dealer);
+void deal_card(struct dealer* dealer);
 void* play_hand(void* args); //args should be a pointer to dealer. 
 uint8_t card_score(card_t* card);
+void remove_current_player(struct dealer* dealer);
 #endif

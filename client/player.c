@@ -18,7 +18,25 @@ int main(){
     exit(EXIT_FAILURE);
   }
 
+  char name[MAX_NAME_LENGTH];
+  char* namebuf;
+  unsigned long len;
+  printf("please enter a name between 1 and 19 characters: ");
+  int read = getline(&namebuf, &len, stdin);
+  while(read < 2 || read>MAX_NAME_LENGTH){ //2, because we always have a newline?
+    printf("error: name is not allowed. Please enter a name between 1 and 19 characters: ");
+    read =getline(&namebuf, &len, stdin);
+  }
+  namebuf[strlen(namebuf)-1] = '\0';
+  memcpy(name, namebuf, MAX_NAME_LENGTH);
+  printf("debug -- size read: %d, len: %d\n", read, len);
+  printf("debug -- name: %s\n", name);
+  printf("test\n");
+  free(namebuf);
+
+  
   addr.sin_family = AF_INET;
+  //todo change this to use inet_aton()
   addr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
   addr.sin_port = htons(SERVER_PORT);
 
@@ -28,6 +46,7 @@ int main(){
     exit(EXIT_FAILURE);
   }
   printf("successfully connected to dealer.\n");
+
   
 
 

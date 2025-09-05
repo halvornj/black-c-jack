@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <arpa/inet.h>
 #include "dealer.h"
 
  
@@ -98,7 +99,6 @@ int main(){
        3. on main-thread, we wait/join on P. This means that once we've joined, we know that their turn is over - either from a time out, a stand or a bust. We can then move on to the next player.
      */
 
-    //step 1.
     
     
 
@@ -121,24 +121,52 @@ int main(){
  */
 void* play_hand(void* args){
   struct dealer* dealer = (struct dealer*) args;
-  struct player* cur_pl = &(dealer->current_player);
+  struct player* cur_pl = dealer->current_player;
   //notes; keep man pages for pthread_cancel() and pthread_setcancelstate() open.
   //I'm thinking we disable cancels while we draw and send cards, then enable before we listen for a response.
   // not actually sure we need to disable cancels as it is only at end of turn anyway, so it doesnt matter if we draw a card and get cancelled before sending. The timer would be over, so it doesn't matter?
   pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL); //should be default, but just in case.
-
+  pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   //okay, now for the actual blackjack stuff :(
   //the ace is going to make this a real pain >:(
   cur_pl->current_score = card_score(cur_pl->hand[0]) + card_score(cur_pl->hand[1]);
 
+  
   while(cur_pl->current_score <22){ //keep in mind, we get cancelled by a timer if we take too long
     //and we return/break if we stand.
 
     uint8_t buf[MSG_BUFSZ];
+    int rc = recv(cur_pl->socket_fd, &buf, MSG_BUFSZ, 0);
+    if(rc<1){ //we didn't recieve anything
+      fprintf(stderr, "recieved malformed message...\n");
+    }
+    struct msg_header headr = *((struct msg_header*) &buf);
+
+    if(headr.type == MSG_DC){
+      pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+      remove_current_player(struct dealer* dealer);
+      pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL); //doesn't matter, we return anyway.
+      return;
+    }
+
+    if(headr.type == MSG_CARD){
+      fprintf(stderr, "error: client sent card to server.\n");
+      return;
+    }
+
     
     
-  }
-  
+  } 
+}
+
+
+void remove_current_player(struct dealer* dealer){
+  mtx_lock(&(dealer->playerll_lock)); // we need to lock the ll for removal.
+
+  dealer->current_player->prev->next = dealer->current_player->next;
+  dealer->current_player->next->prev = dealer->current_player->prev;
+
+  mtx_unlock(&(dealer->playerll_lock));
 }
 
 
@@ -157,10 +185,13 @@ uint8_t card_score(card_t* card){
 
 
 /*
-this function should be called with an already randomized deck. If the deck is not random, this deals them in order.
+ * this function deals a card to the dealers current_player, and messages all players that current_player has recieved a card. the dealers deck should already be random.
+ @param dealer: a pointer to the dealer
+ @returns: nothing.
  */
-card_t* deal_card(struct dealer* dealer){
-  return dealer->deck[dealer->cards_dealt++];
+void deal_card(struct dealer* dealer){
+  //return dealer->deck[dealer->cards_dealt++];
+  card_t* card = dealer->deck[dealer->cards_dealt++];
 }
 
 
@@ -199,7 +230,7 @@ void* listen_for_new_player(void* args){
     //init empty player to be added
     struct player new_player;
     new_player.socket_fd = -1;
-    new_player.balance = 500;
+    new_player.balance = STARTING_BALANCE;
     //todo maybe init rest
 
     //set dealer to listen,
@@ -209,14 +240,19 @@ void* listen_for_new_player(void* args){
     }
 
     struct sockaddr_in client_sockaddr;
-    int cli_addr_len = sizeof(client_sockaddr); //note; this could also be saved, to check and restore balance on reconnect between sessions?
+    int cli_addr_len = sizeof(client_sockaddr);
+    
     //accept new connection,
     new_player.socket_fd = accept(dealer->serv_socket_fd, (struct sockaddr*) &client_sockaddr, (socklen_t*)&cli_addr_len);
     if(new_player.socket_fd <0){
       fprintf(stderr, "error accepting connection.\n");
       exit(EXIT_FAILURE);
     }
-    printf("(listening thread)  accepting connection...\n");
+    //receive their name.
+    int rc = recv(new_player.socket_fd, (void *) &(new_player.name),MAX_NAME_LENGTH, NULL);
+
+    printf("(listening thread)  accepting connection from %s...\n", new_player.name);    
+
     
     //inserting new player
     mtx_lock(&(dealer->playerll_lock));
@@ -225,6 +261,7 @@ void* listen_for_new_player(void* args){
       new_player.prev = &new_player; //ring-buffer
       dealer->current_player = &new_player;
       dealer->head_player = &new_player;
+      
       
     }else{ //insert at the end
       new_player.next = dealer->head_player;
