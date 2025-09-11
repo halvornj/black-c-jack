@@ -4,11 +4,23 @@
 
 #define SERVER_ADDRESS "127.0.0.1"
 #define SERVER_PORT 2311
-#define MSG_BUFSZ 3 //message is 1 byte type, and potentially 2 bytes card, 2 bytes bet/balance or 2 bytes action. TODO much larger, for info
+#define MSG_BUFSZ 128 //TODO calculate this
 #define MAX_NAME_LENGTH 20
+#define MAX_CARDS_PER_HAND 21 // if there is an infinite shoe, you could get 21 aces.
+
 
 typedef char card_t[2]; //each card is represened as 2 characters, e.g. 2D for 2 of diamods, kH for king of hearts
 
+
+struct player {
+  char name[MAX_NAME_LENGTH];
+  uint16_t balance;
+  card_t* hand[MAX_CARDS_PER_HAND];
+  uint8_t current_score;
+  //bool split;
+  //TODO split handling. I think we start with blackjack without splitting, then implement later.
+  
+};
 
 //message structs/types
 enum message_type {
@@ -42,6 +54,7 @@ struct msg_bet{
 struct msg_card{
   enum message_type type; //one of message_type
   card_t card;
+  char name[MAX_NAME_LENGTH];
 };
 struct msg_info{}; //todo
 

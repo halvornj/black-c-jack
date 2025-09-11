@@ -29,9 +29,7 @@ int main(){
   }
   namebuf[strlen(namebuf)-1] = '\0';
   memcpy(name, namebuf, MAX_NAME_LENGTH);
-  printf("debug -- size read: %d, len: %d\n", read, len);
-  printf("debug -- name: %s\n", name);
-  printf("test\n");
+
   free(namebuf);
 
   
@@ -47,6 +45,10 @@ int main(){
   }
   printf("successfully connected to dealer.\n");
 
+  //sending player name.
+  int rc = send(socket_fd, name, MAX_NAME_LENGTH, 0);
+  if(rc < 0){
+    fprintf(stderr, "error sending player name to server.\n");}
   
 
 

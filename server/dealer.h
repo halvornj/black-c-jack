@@ -5,27 +5,21 @@
 #include <threads.h>
 #include "../common.h"
 
-#define MAX_CARDS_PER_HAND 21 // if there is an infinite shoe, you could get 21 aces. 
 #define NUM_DECKS 4
 #define SHOE_SIZE 208 //note that this is dependent on NUM_DECKS, but i dont want to insert a bunch of unnecessary multiplications.
 #define STARTING_BALANCE 500
 
-struct player {
+struct client {
   int socket_fd;
-  char name[MAX_NAME_LENGTH];
-  uint16_t balance;
-  card_t* hand[MAX_CARDS_PER_HAND];
-  uint8_t current_score;
-  bool split;
-  card_t* split_hand[MAX_CARDS_PER_HAND];
-  struct player* prev; //for the ll. I think we do this as a ring-buffer? not sure
-  struct player* next;
+  struct player* player;
+  struct client* prev; //for the ll. I think we do this as a ring-buffer? not sure
+  struct client* next;
 };
   
 struct dealer{
   int serv_socket_fd;
-  struct player* current_player;
-  struct player* head_player;
+  struct client* current_player;
+  struct client* head_player;
   //locks for manipluating players:
   cnd_t players_present;
   mtx_t playerll_lock;
@@ -42,7 +36,8 @@ struct dealer{
 void* listen_for_new_player(void* args); //args is actually a pointer to a dealer
 void reshuffle_deck(struct dealer* dealer);
 void deal_card(struct dealer* dealer);
-void* play_hand(void* args); //args should be a pointer to dealer. 
+void play_hand(void* args); //args should be a pointer to dealer. 
 uint8_t card_score(card_t* card);
 void remove_current_player(struct dealer* dealer);
+void send_game_state(struct dealer* dealer);
 #endif

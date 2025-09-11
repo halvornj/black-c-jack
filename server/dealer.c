@@ -76,17 +76,17 @@ int main(){
 	reshuffle_deck(&dealer);
 	dealer.cards_dealt = 0;
       }
-      struct player* dealing_to = dealer.head_player;
-      bzero((void*) &(dealing_to->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND)); //empty the hand
-      dealing_to->hand[0] = deal_card(&dealer);
-      dealing_to->hand[1] = deal_card(&dealer);
-      dealing_to = dealing_to->next;
+      
+      bzero((void*) &(dealer.current_player->player->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND)); //empty the hand
+      deal_card(&dealer);
+      deal_card(&dealer);
+      dealer.current_player = dealer.current_player->next;
       //we've dealt to the first player, now we go around and deal to everyone else.
-      while(dealing_to != dealer.head_player){
-	bzero((void*) &(dealing_to->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND));
-	dealing_to->hand[0] = deal_card(&dealer);
-	dealing_to->hand[1] = deal_card(&dealer);
-	dealing_to = dealing_to->next;
+      while(dealer.current_player != dealer.head_player){
+	bzero((void*) &(dealer.current_player->player->hand), (sizeof(card_t) * MAX_CARDS_PER_HAND));
+	deal_card(&dealer);
+	deal_card(&dealer);
+	dealer.current_player = dealer.current_player->next;
       }
     }
     //all players should now have 2 cards.
@@ -119,9 +119,9 @@ int main(){
  * @args: a void-cast of a pointer to the dealer. formatted as `void* args` begause pthread wants that and I'm lazy.
  @returns: nothing, but upon thread-completion (from exit or cancel), a hand is done. The next player can be handled.
  */
-void* play_hand(void* args){
+void play_hand(void* args){
   struct dealer* dealer = (struct dealer*) args;
-  struct player* cur_pl = dealer->current_player;
+  struct client* cur_pl = dealer->current_player;
   //notes; keep man pages for pthread_cancel() and pthread_setcancelstate() open.
   //I'm thinking we disable cancels while we draw and send cards, then enable before we listen for a response.
   // not actually sure we need to disable cancels as it is only at end of turn anyway, so it doesnt matter if we draw a card and get cancelled before sending. The timer would be over, so it doesn't matter?
@@ -129,10 +129,12 @@ void* play_hand(void* args){
   pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
   //okay, now for the actual blackjack stuff :(
   //the ace is going to make this a real pain >:(
-  cur_pl->current_score = card_score(cur_pl->hand[0]) + card_score(cur_pl->hand[1]);
+  cur_pl->player->current_score = card_score(cur_pl->player->hand[0]) + card_score(cur_pl->player->hand[1]);
 
+  //first, we tell player that it is their turn.
+  //TODO
   
-  while(cur_pl->current_score <22){ //keep in mind, we get cancelled by a timer if we take too long
+  while(cur_pl->player->current_score < 22){ //keep in mind, we get cancelled by a timer if we take too long
     //and we return/break if we stand.
 
     uint8_t buf[MSG_BUFSZ];
@@ -144,7 +146,7 @@ void* play_hand(void* args){
 
     if(headr.type == MSG_DC){
       pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-      remove_current_player(struct dealer* dealer);
+      remove_current_player(dealer);
       pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL); //doesn't matter, we return anyway.
       return;
     }
@@ -166,6 +168,9 @@ void remove_current_player(struct dealer* dealer){
   dealer->current_player->prev->next = dealer->current_player->next;
   dealer->current_player->next->prev = dealer->current_player->prev;
 
+  free(dealer->current_player->player);
+  free(dealer->current_player);
+
   mtx_unlock(&(dealer->playerll_lock));
 }
 
@@ -185,13 +190,42 @@ uint8_t card_score(card_t* card){
 
 
 /*
- * this function deals a card to the dealers current_player, and messages all players that current_player has recieved a card. the dealers deck should already be random.
+ * this function selects a random card from the dealers deck, and sends it to all clients.
  @param dealer: a pointer to the dealer
- @returns: nothing.
+ @returns: nothing, but will send messages to all players about the newly dealt cards
  */
 void deal_card(struct dealer* dealer){
-  //return dealer->deck[dealer->cards_dealt++];
   card_t* card = dealer->deck[dealer->cards_dealt++];
+
+  struct msg_card msg;
+  msg.type = MSG_CARD;
+  msg.card = *card;
+  msg.name = dealer->current_player->player->name;
+  
+  
+  struct client* current_cli = dealer->head_player;
+  int rc;
+  //send to current player,
+  rc = send(current_cli->socket_fd, (void *) &msg, sizeof(msg), 0);
+  if(rc<0){
+    fprintf(stderr, "error sending card to player...\n");
+    exit(EXIT_FAILURE);
+  }
+
+  //send as status for all players
+  current_cli = current_cli->next;
+
+  while(current_cli != dealer->current_player){
+    rc = send(current_cli->socket_fd, (void *) &msg, sizeof(msg), 0);
+    if(rc<0){
+      fprintf(stderr, "error sending card to player...\n");
+      exit(EXIT_FAILURE);
+    }
+    
+    current_cli = current_cli->next;
+  }
+
+  
 }
 
 
@@ -228,10 +262,8 @@ void* listen_for_new_player(void* args){
   struct dealer* dealer = (struct dealer*) args;
   while (true){ //this thread should run forever, listening and adding.
     //init empty player to be added
-    struct player new_player;
-    new_player.socket_fd = -1;
-    new_player.balance = STARTING_BALANCE;
-    //todo maybe init rest
+    struct client client;
+    client.socket_fd = -1;
 
     //set dealer to listen,
     if((listen(dealer->serv_socket_fd, MAX_PLAYER_COUNT)) != 0){
@@ -243,34 +275,57 @@ void* listen_for_new_player(void* args){
     int cli_addr_len = sizeof(client_sockaddr);
     
     //accept new connection,
-    new_player.socket_fd = accept(dealer->serv_socket_fd, (struct sockaddr*) &client_sockaddr, (socklen_t*)&cli_addr_len);
-    if(new_player.socket_fd <0){
+    client.socket_fd = accept(dealer->serv_socket_fd, (struct sockaddr*) &client_sockaddr, (socklen_t*)&cli_addr_len);
+    if(client.socket_fd <0){
       fprintf(stderr, "error accepting connection.\n");
       exit(EXIT_FAILURE);
     }
-    //receive their name.
-    int rc = recv(new_player.socket_fd, (void *) &(new_player.name),MAX_NAME_LENGTH, NULL);
 
-    printf("(listening thread)  accepting connection from %s...\n", new_player.name);    
+    //allocate player-struct
+    client.player = malloc(sizeof(struct player));
+    
+    //receive their name.
+    int rc = recv(client.socket_fd, (void *) &(client.player->name),MAX_NAME_LENGTH, 0);
+    if(rc<0){
+      fprintf(stderr, "error recieving player name.\n");
+    }
+
+    client.player->balance = STARTING_BALANCE;
+    
+    printf("(listening thread)  accepting connection from %s...\n", client.player->name);    
 
     
     //inserting new player
     mtx_lock(&(dealer->playerll_lock));
+    
     if(dealer->head_player == NULL){//no players present, this connection is the first
-      new_player.next = &new_player;
-      new_player.prev = &new_player; //ring-buffer
-      dealer->current_player = &new_player;
-      dealer->head_player = &new_player;
-      
+      client.next = &client;
+      client.prev = &client; //ring-buffer
+      dealer->current_player = &client;
+      dealer->head_player = &client;
       
     }else{ //insert at the end
-      new_player.next = dealer->head_player;
-      new_player.prev = dealer->head_player->prev;
-      dealer->head_player->prev->next = &new_player;
-      dealer->head_player->prev = &new_player;
+      client.next = dealer->head_player;
+      client.prev = dealer->head_player->prev;
+      dealer->head_player->prev->next = &client;
+      dealer->head_player->prev = &client;
       //note; we dont set a .new-bool here, but when we revolve players in the gameplay loop we must check if they have cards. if the "current player" does not have any cards, it means they joined mid-round, and should be skipped.
     }
     cnd_signal(&(dealer->players_present)); //signal that there are players present, and gameloop may run.
     mtx_unlock(&(dealer->playerll_lock));
   }
+}
+
+void send_game_state(struct dealer* dealer){
+  if(dealer->head_player == NULL){
+    fprintf(stderr,"error: sending state to empty table. aborting...\n");
+    exit(EXIT_FAILURE);
+  }
+
+  //send update to head
+  
+  //advance current
+
+  //loop while current not head
+  
 }
