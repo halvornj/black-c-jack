@@ -151,11 +151,14 @@ void play_hand(void* args){
       return;
     }
 
-    if(headr.type == MSG_CARD){
-      fprintf(stderr, "error: client sent card to server.\n");
-      return;
+    if(headr.type == MSG_CARD || headr.type == MSG_YOURTURN || headr.type == MSG_INFO){
+      fprintf(stderr, "error: client sent bad message to server. type: %d.\n", headr.type);
+      uint8_t* resp_buf = &(MSG_REJECTED);
+      ssize_t sc = send(cur_pl->socket_fd, resp_buf, sizeof(MSG_REJECTED), 0);
+      //for now msg_reject is best effort, we dont care if we didn't manage to send it. But note that the sc could be checked and printed on error here, for debugging.
     }
 
+    
     
     
   } 

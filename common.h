@@ -29,9 +29,9 @@ enum message_type {
   MSG_ACTION, //message from client to server, containing a play-action
   MSG_BET, //message from client to server, containing a bet-amount.
   MSG_YOURTURN, //message from server to client, saying it is their turn.
-  MSG_INFO
+  MSG_INFO,
+  MSG_REJECTED //used by server to tell client last message was not accepted.
 };
-
 enum action{
   ACT_HIT,
   ACT_STAND,
