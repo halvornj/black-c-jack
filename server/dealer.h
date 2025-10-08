@@ -40,4 +40,6 @@ void play_hand(void* args); //args should be a pointer to dealer.
 uint8_t card_score(card_t* card);
 void remove_current_player(struct dealer* dealer);
 void send_game_state(struct dealer* dealer);
+int recv_msg(int sockfd, uint8_t** buf);
+
 #endif

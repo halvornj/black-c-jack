@@ -11,7 +11,8 @@
 #include <arpa/inet.h>
 #include "dealer.h"
 
- 
+
+#define NOFLAGS 0
 #define MAX_PLAYER_COUNT 10
 #define RESHUFFLE_DECK_LIMIT 30
 
@@ -120,6 +121,7 @@ int main(){
  @returns: nothing, but upon thread-completion (from exit or cancel), a hand is done. The next player can be handled.
  */
 void play_hand(void* args){
+  int rc;
   struct dealer* dealer = (struct dealer*) args;
   struct client* cur_pl = dealer->current_player;
   //notes; keep man pages for pthread_cancel() and pthread_setcancelstate() open.
@@ -132,14 +134,20 @@ void play_hand(void* args){
   cur_pl->player->current_score = card_score(cur_pl->player->hand[0]) + card_score(cur_pl->player->hand[1]);
 
   //first, we tell player that it is their turn.
-  //TODO
-  
+  uint8_t* y_turn_buf = &(MSG_YOURTURN);
+  rc = send(cur_pl->socket_fd, y_turn_buf, sizeof(MSG_YOURTURN), NOFLAGS);
+  if(rc<0){
+    fprintf(stderr, "error sending MSG_YOURTURN at start of turn. Skipping.\n");
+    return;
+  }
+
   while(cur_pl->player->current_score < 22){ //keep in mind, we get cancelled by a timer if we take too long
     //and we return/break if we stand.
 
-    uint8_t buf[MSG_BUFSZ];
-    int rc = recv(cur_pl->socket_fd, &buf, MSG_BUFSZ, 0);
-    if(rc<1){ //we didn't recieve anything
+    unit8_t* msg = *NULL;
+    rc = recv_msg(cur_pl->sock_fd, &msg);
+    
+    if(rc<0){ //we didn't recieve anything
       fprintf(stderr, "recieved malformed message...\n");
     }
     struct msg_header headr = *((struct msg_header*) &buf);
@@ -158,8 +166,13 @@ void play_hand(void* args){
       //for now msg_reject is best effort, we dont care if we didn't manage to send it. But note that the sc could be checked and printed on error here, for debugging.
     }
 
-    
-    
+    rc = deal_card(dealer);
+    if(rc !=0){
+      fprintf(stderr, "play_hand(): something went wrong.\n");
+    }
+    //now, all players have been updated. we wait for action
+    uint8_t in_buf[MSG_BUFSZ];
+    rc = recv(cur_pl->socket_fd, &in_buf, MSG_BUFSZ, )
     
   } 
 }
@@ -195,9 +208,10 @@ uint8_t card_score(card_t* card){
 /*
  * this function selects a random card from the dealers deck, and sends it to all clients.
  @param dealer: a pointer to the dealer
- @returns: nothing, but will send messages to all players about the newly dealt cards
+ @returns: 0 on success, -1 on failure. Will send messages to all players about the newly dealt cards
  */
-void deal_card(struct dealer* dealer){
+int deal_card(struct dealer* dealer){
+  //TODO magic numbers in return
   card_t* card = dealer->deck[dealer->cards_dealt++];
 
   struct msg_card msg;
@@ -212,7 +226,7 @@ void deal_card(struct dealer* dealer){
   rc = send(current_cli->socket_fd, (void *) &msg, sizeof(msg), 0);
   if(rc<0){
     fprintf(stderr, "error sending card to player...\n");
-    exit(EXIT_FAILURE);
+    return -1;
   }
 
   //send as status for all players
@@ -222,11 +236,17 @@ void deal_card(struct dealer* dealer){
     rc = send(current_cli->socket_fd, (void *) &msg, sizeof(msg), 0);
     if(rc<0){
       fprintf(stderr, "error sending card to player...\n");
-      exit(EXIT_FAILURE);
+      return -1;
     }
     
     current_cli = current_cli->next;
+    return 0;
   }
+
+
+
+  
+  
 
   
 }
@@ -331,4 +351,26 @@ void send_game_state(struct dealer* dealer){
 
   //loop while current not head
   
+}
+
+/*
+  @param sockfd: file descriptor for socket to recieve from.
+  @param buf: pointer to a pointer to the buffer where the mesasge will be put. Message is allocated here, so callers should make a pointer to a null-pointer? then, after call, *buf will be a pointer to the buffer.
+  @returns: size of buf, along with the pointer in buf.
+ */
+int recv_msg(int sockfd, uint8_t** buf){
+  int rc;
+  uint8_t header[HEADER_SIZE];
+  rc = recv(socket_fd, &header, HEADER_SIZE, MSG_PEEK);
+  if(rc < 0){
+    fprintf(stderr, "could not read header.\n");
+    return -1;
+  }
+  uint16_t size = ((struct msg_header*) &header)->size;
+  uint8_t* in_buf = (uint8_t *) malloc(size);
+  int rc = recv(sockfd, &in_buf, size, NOFLAGS);
+  
+  *buf = in_buf;
+  
+  return size;
 }

@@ -7,7 +7,7 @@
 #define MSG_BUFSZ 128 //TODO calculate this
 #define MAX_NAME_LENGTH 20
 #define MAX_CARDS_PER_HAND 21 // if there is an infinite shoe, you could get 21 aces.
-
+#define HEADER_SIZE sizeof(struct msg_header)
 
 typedef char card_t[2]; //each card is represened as 2 characters, e.g. 2D for 2 of diamods, kH for king of hearts
 
@@ -41,22 +41,29 @@ enum action{
 
 struct msg_header{
   enum message_type type; //one of message_type
+  uint16_t size;
 };
 
 struct msg_action{
   enum message_type type; //one of message_type
+  uint16_t size;
   enum action action;
 };
 struct msg_bet{
   enum message_type type; //one of message_type
+  uint16_t size;
   uint16_t amount;
 };
 struct msg_card{
   enum message_type type; //one of message_type
+  uint16_t size;
   card_t card;
   char name[MAX_NAME_LENGTH];
 };
-struct msg_info{}; //todo
+struct msg_info{
+  enum message_type type;
+  uint16_t size;
+}; //todo
 
 
 #endif
